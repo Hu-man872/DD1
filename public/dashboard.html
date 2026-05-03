@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClinicFlow Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="dashboard-page">
+    <header class="topbar dashboard-topbar">
+      <div class="brand-cluster">
+        <div class="brand-mark brand-mark-small">CF</div>
+        <div>
+          <p class="eyebrow">Clinical command center</p>
+          <h1>ClinicFlow Dashboard</h1>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="todayLabel" class="today-label"></span>
+        <button id="logoutButton" class="ghost-button">Logout</button>
+      </div>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="dashboard-hero">
+        <div>
+          <p class="eyebrow">Today at a glance</p>
+          <h2 id="viewTitle">Active Patients</h2>
+          <p id="queueCount" class="hero-copy">0 active</p>
+        </div>
+
+        <div class="metric-grid" aria-label="Queue summary">
+          <div class="metric-card">
+            <span>Active</span>
+            <strong id="activeMetric">0</strong>
+          </div>
+          <div class="metric-card">
+            <span>Showed</span>
+            <strong id="showedMetric">0</strong>
+          </div>
+          <div class="metric-card">
+            <span>Pending</span>
+            <strong id="pendingMetric">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <nav class="dashboard-view-tabs" aria-label="Dashboard sections">
+        <button id="patientsSectionButton" class="section-tab is-active" type="button">Patients</button>
+        <button id="reportsSectionButton" class="section-tab" type="button">Reports</button>
+      </nav>
+
+      <section id="patientsView" class="dashboard-view">
+        <section class="queue-header">
+          <label class="search-control" aria-label="Search patients">
+            <span class="search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M10.7 18.2a7.5 7.5 0 1 1 5.3-12.8 7.5 7.5 0 0 1-5.3 12.8Zm0-2a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Zm9.1 4.4-5-5 1.4-1.4 5 5-1.4 1.4Z" />
+              </svg>
+            </span>
+            <input id="patientSearch" type="search" placeholder="Search by name or phone" autocomplete="off" />
+          </label>
+
+          <div class="queue-tools">
+            <div class="view-toggle" aria-label="Patient view">
+              <button id="activeViewButton" class="toggle-button is-active" type="button">Active</button>
+              <button id="treatedViewButton" class="toggle-button" type="button">Treated</button>
+            </div>
+            <button id="refreshButton" class="secondary-button icon-text-button" title="Refresh queue">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M18.7 8.3A7.8 7.8 0 0 0 5.1 7.1V4H3v7h7V8.9H6.6A5.7 5.7 0 0 1 16.9 7a5.5 5.5 0 0 1 1.5 3.1l2.1-.2a7.7 7.7 0 0 0-1.8-1.6ZM5.3 15.7a7.8 7.8 0 0 0 13.6 1.2V20H21v-7h-7v2.1h3.4A5.7 5.7 0 0 1 7.1 17a5.5 5.5 0 0 1-1.5-3.1l-2.1.2a7.7 7.7 0 0 0 1.8 1.6Z" />
+                </svg>
+              </span>
+              Refresh
+            </button>
+          </div>
+        </section>
+
+        <section class="filter-panel" aria-label="Patient filters">
+          <label>
+            Date
+            <input id="dateFilter" type="date" />
+          </label>
+          <label>
+            Name
+            <input id="nameFilter" type="text" placeholder="Patient name" autocomplete="off" />
+          </label>
+          <label>
+            Phone
+            <input id="phoneFilter" type="tel" placeholder="Phone number" autocomplete="off" />
+          </label>
+          <button id="clearFiltersButton" class="ghost-button" type="button">Clear</button>
+        </section>
+
+        <section id="patientList" class="patient-list" aria-live="polite"></section>
+        <p id="dashboardMessage" class="message" role="status"></p>
+      </section>
+
+      <section id="reportsView" class="dashboard-view" hidden>
+        <section class="report-panel" aria-label="Clinic report">
+        <div class="report-header">
+          <div>
+            <p class="eyebrow">Clinic intelligence</p>
+            <h2>Reports</h2>
+          </div>
+          <div class="report-actions">
+            <button id="generateReportButton" class="secondary-button icon-text-button" type="button">Generate</button>
+            <button id="downloadReportButton" class="primary-button icon-text-button" type="button">Download PDF</button>
+          </div>
+        </div>
+
+        <div class="report-controls">
+          <label>
+            Period
+            <select id="reportPeriod">
+              <option value="7">Last 7 days</option>
+              <option value="15">Last 15 days</option>
+              <option value="this_month">This month</option>
+              <option value="last_month">Last month</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>
+            Start
+            <input id="reportStartDate" type="date" />
+          </label>
+          <label>
+            End
+            <input id="reportEndDate" type="date" />
+          </label>
+        </div>
+
+        <div id="reportPreview" class="report-preview" hidden>
+          <div class="report-stat">
+            <span>New Patients</span>
+            <strong id="reportNewPatients">0</strong>
+          </div>
+          <div class="report-stat">
+            <span>Show Rate</span>
+            <strong id="reportShowRate">0%</strong>
+          </div>
+          <div class="report-stat">
+            <span>No Show</span>
+            <strong id="reportNoShow">0</strong>
+          </div>
+          <div class="report-stat">
+            <span>Follow-ups</span>
+            <strong id="reportFollowups">0</strong>
+          </div>
+          <div class="report-stat">
+            <span>Forms</span>
+            <strong id="reportForms">0</strong>
+          </div>
+        </div>
+        <ul id="reportInsights" class="report-insights"></ul>
+        <p id="reportMessage" class="message" role="status"></p>
+        </section>
+      </section>
+    </main>
+
+    <template id="patientTemplate">
+      <article class="patient-card">
+        <div class="patient-main">
+          <div class="patient-avatar"></div>
+          <div class="patient-copy">
+            <div class="patient-heading">
+              <h3>
+                <button class="patient-name patient-name-button" type="button"></button>
+              </h3>
+              <span class="appointment-badge"></span>
+            </div>
+            <p class="patient-phone"></p>
+            <div class="patient-meta">
+              <span class="position"></span>
+              <span class="join-date"></span>
+              <span class="queue-pill"></span>
+              <span class="followup-chip"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="appointment-control">
+          <label>
+            Appointment Status
+            <select class="appointment-status-select">
+              <option value="confirmed">Confirmed</option>
+              <option value="showed">Showed</option>
+              <option value="no_show">No Show</option>
+              <option value="rescheduled">Rescheduled</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="patient-actions">
+          <button class="primary-button complete-button icon-text-button" type="button" title="Open consultation form">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M7 3h8.2L21 8.8V21H7V3Zm7 2v5h5l-5-5ZM9 19h10v-7h-7V5H9v14ZM3 7h2v14h10v2H3V7Z" />
+              </svg>
+            </span>
+            Consultation
+          </button>
+          <button class="danger-button done-button icon-text-button" type="button" title="Move patient to treated list">
+            <span class="button-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="m9.7 16.6-4.2-4.2L4 13.9l5.7 5.7L21 8.3 19.5 6.8 9.7 16.6Z" />
+              </svg>
+            </span>
+            Treatment Done
+          </button>
+        </div>
+      </article>
+    </template>
+
+    <div id="detailOverlay" class="detail-overlay" hidden></div>
+    <aside id="patientDetail" class="patient-detail-panel" aria-labelledby="detailTitle" hidden>
+      <header class="detail-header">
+        <div>
+          <p class="eyebrow">Patient Details</p>
+          <h2 id="detailTitle"></h2>
+          <p id="detailSubtitle" class="detail-subtitle"></p>
+        </div>
+        <button id="closeDetailButton" class="ghost-button detail-close-button" type="button" aria-label="Close details">Close</button>
+      </header>
+
+      <div class="detail-content">
+        <section class="detail-section">
+          <h3>Visit</h3>
+          <dl id="visitDetails" class="detail-grid"></dl>
+        </section>
+
+        <section class="detail-section">
+          <h3>Follow Up</h3>
+          <dl id="followupDetails" class="detail-grid"></dl>
+        </section>
+
+        <section class="detail-section">
+          <h3>Form Data</h3>
+          <dl id="formDetails" class="detail-grid"></dl>
+        </section>
+      </div>
+    </aside>
+
+    <script src="/dashboard.js"></script>
+  </body>
+</html>
