@@ -18,7 +18,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const APPOINTMENT_STATUSES = ["confirmed", "showed", "no_show", "rescheduled", "cancelled"];
 const FORM_FIELD_ALIASES = {
-  notes: ["notes", "doctor_notes", "doctorNotes", "consultation_notes", "consultationNotes"],
+  notes: ["notes", "doctor_notes", "doctorNotes", "consultation_notes", "consultationNotes", "consultation notes"],
   followup_required: [
     "followup_required",
     "followupRequired",
@@ -28,8 +28,8 @@ const FORM_FIELD_ALIASES = {
     "needFollowup",
     "needs_followup",
     "needsFollowup",
-    "followup",
-    "follow_up"
+    "follow up required",
+    "follow-up required"
   ],
   followup_days: ["followup_days", "followupDays", "follow_up_days", "followUpDays"],
   followup_date: [
@@ -42,7 +42,8 @@ const FORM_FIELD_ALIASES = {
     "next_followup_date",
     "nextFollowupDate",
     "next_appointment_date",
-    "nextAppointmentDate"
+    "nextAppointmentDate",
+    "next date"
   ],
   reminder_required: [
     "reminder_required",
@@ -53,9 +54,27 @@ const FORM_FIELD_ALIASES = {
     "needReminder",
     "needs_reminder",
     "needsReminder",
-    "reminder"
+    "reminder needed",
+    "medication reminder need"
   ],
   reminder_date: ["reminder_date", "reminderDate", "remind_at", "remindAt"]
+};
+const DOCTOR_FORM_FIELD_ALIASES = {
+  "Consultation Notes": ["consultation_notes", "consultationNotes", "consultation notes"],
+  "Doctor Notes": ["doctor_notes", "doctorNotes", "doctor notes", "notes"],
+  "Reason For Visit": ["reason_for_visit", "reasonForVisit", "reason for visit"],
+  "Treatment Status": ["treatment_status", "treatmentStatus", "treatment status"],
+  "Follow Up Required": FORM_FIELD_ALIASES.followup_required,
+  "Follow Up Days": FORM_FIELD_ALIASES.followup_days,
+  "Follow Up Date": FORM_FIELD_ALIASES.followup_date,
+  "Medication Required": ["medication_required", "medicationRequired", "medication required"],
+  "Medication Reminder Need": FORM_FIELD_ALIASES.reminder_required,
+  "Reminder Date": FORM_FIELD_ALIASES.reminder_date,
+  "Last Visit Date": ["last_visit_date", "lastVisitDate", "last visit date"],
+  "Appointment Time": ["appointment_time", "appointmentTime", "appointment time"],
+  "Estimated Wait Time": ["estimated_wait_time", "estimatedWaitTime", "estimated wait time"],
+  "Personal Email": ["personal_email", "personalEmail", "personal email"],
+  "Appointment Status": ["appointment_status", "appointmentStatus", "appointment status"]
 };
 
 app.use(express.json());
@@ -107,6 +126,15 @@ function normalizeFieldKey(key) {
     .replace(/[^a-z0-9]+/g, "");
 }
 
+function isMeaningfulFormValue(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  return normalized !== "" && normalized !== "not set" && normalized !== "null" && normalized !== "undefined";
+}
+
 function getFirstRawField(sources, keys) {
   const normalizedKeys = keys.map(normalizeFieldKey);
 
@@ -119,13 +147,13 @@ function getFirstRawField(sources, keys) {
 
     for (const key of keys) {
       const value = source[key];
-      if (value !== undefined && value !== null && String(value).trim() !== "") {
+      if (isMeaningfulFormValue(value)) {
         return value;
       }
     }
 
     const normalizedMatch = normalizedEntries.find(
-      ([key, value]) => normalizedKeys.includes(key) && value !== undefined && value !== null && String(value).trim() !== ""
+      ([key, value]) => normalizedKeys.includes(key) && isMeaningfulFormValue(value)
     );
 
     if (normalizedMatch) {
@@ -182,7 +210,8 @@ function getFormSources(body) {
     coerceObject(normalizedBody.data),
     coerceObject(normalizedBody.form),
     coerceObject(normalizedBody.fields),
-    coerceObject(normalizedBody.contact)
+    coerceObject(normalizedBody.submission),
+    coerceObject(normalizedBody.answers)
   ];
 }
 
@@ -196,9 +225,29 @@ function getStandardFormFields(body) {
   );
 }
 
+function getDoctorFormDetails(body) {
+  const sources = getFormSources(body);
+
+  return Object.fromEntries(
+    Object.entries(DOCTOR_FORM_FIELD_ALIASES)
+      .map(([label, aliases]) => [label, getFirstRawField(sources, aliases)])
+      .filter(([, value]) => isMeaningfulFormValue(value))
+      .map(([label, value]) => [label, sanitizeFormDetails(value)])
+  );
+}
+
 function applyPatientFormFields(patient, body, options = {}) {
   const fields = getStandardFormFields(body);
   let hasFormFields = false;
+
+  if (options.storeDoctorFormDetails) {
+    patient.notes = "";
+    patient.followup_required = false;
+    patient.followup_days = 0;
+    patient.followup_date = null;
+    patient.reminder_required = false;
+    patient.reminder_date = null;
+  }
 
   if (fields.notes !== undefined) {
     patient.notes = String(fields.notes || "").trim();
@@ -232,11 +281,8 @@ function applyPatientFormFields(patient, body, options = {}) {
     hasFormFields = true;
   }
 
-  if (hasFormFields || options.storeRawSubmission) {
-    patient.consultation_details = {
-      ...(isPlainObject(patient.consultation_details) ? patient.consultation_details : {}),
-      ...sanitizeFormDetails(coerceObject(body))
-    };
+  if (hasFormFields || options.storeDoctorFormDetails) {
+    patient.consultation_details = getDoctorFormDetails(body);
     patient.last_form_submission_at = new Date();
   }
 
@@ -1039,7 +1085,6 @@ app.post("/add", async (req, res) => {
     patient.reminder_date = null;
     patient.consultation_details = {};
     patient.last_form_submission_at = null;
-    applyPatientFormFields(patient, body);
 
     await patient.save();
 
@@ -1085,7 +1130,7 @@ app.post("/consultation", async (req, res) => {
       patient.name = name;
     }
 
-    applyPatientFormFields(patient, body, { storeRawSubmission: true });
+    applyPatientFormFields(patient, body, { storeDoctorFormDetails: true });
     await patient.save();
 
     return res.json({
