@@ -43,6 +43,23 @@ const reportForms = document.getElementById("reportForms");
 const reportInsights = document.getElementById("reportInsights");
 const reportMessage = document.getElementById("reportMessage");
 const CONSULTATION_FORM_URL = "https://brand.ariesmediacompany.com/widget/form/TNnFV59elnOAmxzym3jv";
+const FORM_DETAIL_LABELS = new Set([
+  "Consultation Notes",
+  "Doctor Notes",
+  "Reason For Visit",
+  "Treatment Status",
+  "Follow Up Required",
+  "Follow Up Days",
+  "Follow Up Date",
+  "Medication Required",
+  "Medication Reminder Need",
+  "Reminder Date",
+  "Last Visit Date",
+  "Appointment Time",
+  "Estimated Wait Time",
+  "Personal Email",
+  "Appointment Status"
+]);
 let currentView = "active";
 let currentSection = "patients";
 let patientCache = [];
@@ -183,6 +200,15 @@ function formatDetailValue(value) {
   return String(value);
 }
 
+function hasMeaningfulDetailValue(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  return normalized !== "" && normalized !== "not set" && normalized !== "null" && normalized !== "undefined";
+}
+
 function titleizeKey(key) {
   return String(key || "")
     .replace(/[_-]+/g, " ")
@@ -206,6 +232,54 @@ function flattenDetails(value, prefix = "") {
 
     return [[detailKey, item]];
   });
+}
+
+function getVisibleFormRows(details) {
+  return flattenDetails(details || {})
+    .map(([key, value]) => [titleizeKey(key), value])
+    .filter(([label, value]) => FORM_DETAIL_LABELS.has(label) && hasMeaningfulDetailValue(value));
+}
+
+function getFormDetailValue(details, label) {
+  const rows = flattenDetails(details || {}).map(([key, value]) => [titleizeKey(key), value]);
+  const match = rows.find(([rowLabel]) => rowLabel === label);
+  return match ? match[1] : undefined;
+}
+
+function isYesValue(value) {
+  return ["yes", "true", "1", "required", "needed", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function isNoValue(value) {
+  return ["no", "false", "0", "not set", "none", "off"].includes(String(value || "").trim().toLowerCase());
+}
+
+function getEffectiveFollowupRequired(patient) {
+  const formValue = getFormDetailValue(patient.consultation_details, "Follow Up Required");
+
+  if (isYesValue(formValue)) {
+    return true;
+  }
+
+  if (isNoValue(formValue) || patient.last_form_submission_at) {
+    return false;
+  }
+
+  return Boolean(patient.followup_required);
+}
+
+function getEffectiveReminderRequired(patient) {
+  const formValue = getFormDetailValue(patient.consultation_details, "Medication Reminder Need");
+
+  if (isYesValue(formValue)) {
+    return true;
+  }
+
+  if (isNoValue(formValue) || patient.last_form_submission_at) {
+    return false;
+  }
+
+  return Boolean(patient.reminder_required);
 }
 
 function setDetailRows(container, rows) {
@@ -427,6 +501,9 @@ function renderEmptyState() {
 }
 
 function populatePatientDetails(patient) {
+  const followupRequired = getEffectiveFollowupRequired(patient);
+  const reminderRequired = getEffectiveReminderRequired(patient);
+
   detailTitle.textContent = patient.name || "Patient";
   detailSubtitle.textContent = patient.phone || "";
 
@@ -440,17 +517,17 @@ function populatePatientDetails(patient) {
   ]);
 
   setDetailRows(followupDetails, [
-    ["Follow-up required", formatYesNo(patient.followup_required)],
-    ["Follow-up days", patient.followup_days || 0],
-    ["Next date", formatDateOnly(patient.followup_date)],
-    ["Reminder needed", formatYesNo(patient.reminder_required)],
-    ["Reminder date", formatDateTime(patient.reminder_date)],
+    ["Follow-up required", formatYesNo(followupRequired)],
+    ["Follow-up days", followupRequired ? patient.followup_days || 0 : 0],
+    ["Next date", followupRequired ? formatDateOnly(patient.followup_date) : "Not set"],
+    ["Reminder needed", formatYesNo(reminderRequired)],
+    ["Reminder date", reminderRequired ? formatDateTime(patient.reminder_date) : "Not set"],
     ["Notes", patient.notes]
   ]);
 
-  const rawFormRows = flattenDetails(patient.consultation_details || {});
+  const rawFormRows = getVisibleFormRows(patient.consultation_details || {});
   const visibleFormRows = rawFormRows.length > 0
-    ? rawFormRows.map(([key, value]) => [titleizeKey(key), value])
+    ? rawFormRows
     : [["Form data", "Not submitted yet"]];
   setDetailRows(formDetails, visibleFormRows);
 }
@@ -514,8 +591,9 @@ function renderPatients(patients) {
     joinDate.textContent = `Joined ${formatDateOnly(patient.join_time || patient.createdAt)}`;
     queueStatus.textContent = formatStatus(patient.status);
     queueStatus.dataset.status = patient.status;
-    followupChip.textContent = patient.followup_required ? "Follow-up: Yes" : "Follow-up: No";
-    followupChip.dataset.active = patient.followup_required ? "true" : "false";
+    const followupRequired = getEffectiveFollowupRequired(patient);
+    followupChip.textContent = followupRequired ? "Follow-up: Yes" : "Follow-up: No";
+    followupChip.dataset.active = followupRequired ? "true" : "false";
     appointmentBadge.textContent = formatAppointmentStatus(patient.appointment_status);
     appointmentBadge.dataset.status = patient.appointment_status || "confirmed";
     appointmentStatus.value = patient.appointment_status || "confirmed";
