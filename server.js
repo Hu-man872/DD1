@@ -28,15 +28,30 @@ const FORM_FIELD_ALIASES = {
     "needFollowup",
     "needs_followup",
     "needsFollowup",
+    "folloup_required",
+    "folloupRequired",
+    "folloup required",
+    "folloup",
     "follow up required",
     "follow-up required"
   ],
-  followup_days: ["followup_days", "followupDays", "follow_up_days", "followUpDays"],
+  followup_days: [
+    "followup_days",
+    "followupDays",
+    "follow_up_days",
+    "followUpDays",
+    "folloup_days",
+    "folloupDays",
+    "folloup days"
+  ],
   followup_date: [
     "followup_date",
     "followupDate",
     "follow_up_date",
     "followUpDate",
+    "folloup_date",
+    "folloupDate",
+    "folloup date",
     "next_date",
     "nextDate",
     "next_followup_date",
@@ -135,6 +150,83 @@ function isMeaningfulFormValue(value) {
   return normalized !== "" && normalized !== "not set" && normalized !== "null" && normalized !== "undefined";
 }
 
+function collectNestedFormSources(value, sources = [], depth = 0) {
+  if (!value || depth > 5) {
+    return sources;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectNestedFormSources(item, sources, depth + 1));
+    return sources;
+  }
+
+  if (!isPlainObject(value)) {
+    return sources;
+  }
+
+  sources.push(value);
+
+  Object.entries(value).forEach(([key, item]) => {
+    const normalizedKey = normalizeFieldKey(key);
+    const shouldReadNested =
+      [
+        "customdata",
+        "customfields",
+        "customfield",
+        "fields",
+        "field",
+        "form",
+        "submission",
+        "answers",
+        "answer",
+        "data",
+        "values",
+        "value",
+        "properties"
+      ].includes(normalizedKey) ||
+      Array.isArray(item);
+
+    if (shouldReadNested) {
+      collectNestedFormSources(item, sources, depth + 1);
+    }
+  });
+
+  return sources;
+}
+
+function expandFieldObjects(sources) {
+  const expandedSources = [...sources];
+
+  sources.forEach((source) => {
+    if (!isPlainObject(source)) {
+      return;
+    }
+
+    const fieldName = getFirstValue(
+      source.name,
+      source.field_name,
+      source.fieldName,
+      source.label,
+      source.title,
+      source.key,
+      source.id
+    );
+    const fieldValue = getFirstValue(
+      source.value,
+      source.field_value,
+      source.fieldValue,
+      source.answer,
+      source.response
+    );
+
+    if (fieldName && isMeaningfulFormValue(fieldValue)) {
+      expandedSources.push({ [fieldName]: fieldValue });
+    }
+  });
+
+  return expandedSources;
+}
+
 function getFirstRawField(sources, keys) {
   const normalizedKeys = keys.map(normalizeFieldKey);
 
@@ -178,6 +270,21 @@ function normalizeOptionalDate(value) {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
+function getDaysUntilDate(date, fromDate = new Date()) {
+  if (!date) {
+    return 0;
+  }
+
+  const target = new Date(date);
+  const start = new Date(fromDate);
+
+  target.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+
+  const days = Math.ceil((target.getTime() - start.getTime()) / 86400000);
+  return Number.isFinite(days) && days > 0 ? days : 0;
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -204,7 +311,7 @@ function sanitizeFormDetails(value) {
 
 function getFormSources(body) {
   const normalizedBody = coerceObject(body);
-  return [
+  return expandFieldObjects(collectNestedFormSources([
     normalizedBody,
     coerceObject(normalizedBody.customData || normalizedBody.custom_data),
     coerceObject(normalizedBody.data),
@@ -212,7 +319,7 @@ function getFormSources(body) {
     coerceObject(normalizedBody.fields),
     coerceObject(normalizedBody.submission),
     coerceObject(normalizedBody.answers)
-  ];
+  ]));
 }
 
 function getStandardFormFields(body) {
@@ -267,6 +374,7 @@ function applyPatientFormFields(patient, body, options = {}) {
   if (fields.followup_date !== undefined) {
     const followupDate = normalizeOptionalDate(fields.followup_date);
     patient.followup_date = followupDate || null;
+    patient.followup_days = getDaysUntilDate(patient.followup_date);
     hasFormFields = true;
   }
 
@@ -1131,10 +1239,15 @@ app.post("/consultation", async (req, res) => {
     }
 
     applyPatientFormFields(patient, body, { storeDoctorFormDetails: true });
+    const savedFormFields = Object.keys(patient.consultation_details || {});
+    if (savedFormFields.length === 0) {
+      console.warn("Consultation webhook received but no doctor form fields matched:", JSON.stringify(body, null, 2));
+    }
     await patient.save();
 
     return res.json({
       message: "Consultation form details saved.",
+      saved_form_fields: savedFormFields,
       patient
     });
   } catch (error) {
@@ -1264,6 +1377,7 @@ app.post("/update", authMiddleware, async (req, res) => {
     if (req.body.followup_date !== undefined || req.body.next_date !== undefined) {
       const followupDate = normalizeOptionalDate(req.body.followup_date || req.body.next_date);
       patient.followup_date = followupDate || null;
+      patient.followup_days = getDaysUntilDate(patient.followup_date);
     }
 
     if (req.body.reminder_required !== undefined || req.body.reminder_needed !== undefined) {
