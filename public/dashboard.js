@@ -60,6 +60,15 @@ const FORM_DETAIL_LABELS = new Set([
   "Personal Email",
   "Appointment Status"
 ]);
+const SUMMARY_FORM_LABELS = new Set([
+  "Doctor Notes",
+  "Consultation Notes",
+  "Follow Up Required",
+  "Follow Up Days",
+  "Follow Up Date",
+  "Medication Reminder Need",
+  "Reminder Date"
+]);
 let currentView = "active";
 let currentSection = "patients";
 let patientCache = [];
@@ -234,10 +243,17 @@ function flattenDetails(value, prefix = "") {
   });
 }
 
-function getVisibleFormRows(details) {
+function getVisibleFormRows(details, options = {}) {
+  const excludedLabels = options.excludeLabels || new Set();
+
   return flattenDetails(details || {})
     .map(([key, value]) => [titleizeKey(key), value])
-    .filter(([label, value]) => FORM_DETAIL_LABELS.has(label) && hasMeaningfulDetailValue(value));
+    .filter(
+      ([label, value]) =>
+        FORM_DETAIL_LABELS.has(label) &&
+        !excludedLabels.has(label) &&
+        hasMeaningfulDetailValue(value)
+    );
 }
 
 function getFormDetailValue(details, label) {
@@ -280,6 +296,21 @@ function getEffectiveReminderRequired(patient) {
   }
 
   return Boolean(patient.reminder_required);
+}
+
+function getFollowupDaysFromDate(value) {
+  const target = value ? new Date(value) : null;
+
+  if (!target || Number.isNaN(target.getTime())) {
+    return 0;
+  }
+
+  const start = new Date();
+  target.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+
+  const days = Math.ceil((target.getTime() - start.getTime()) / 86400000);
+  return Number.isFinite(days) && days > 0 ? days : 0;
 }
 
 function setDetailRows(container, rows) {
@@ -503,6 +534,7 @@ function renderEmptyState() {
 function populatePatientDetails(patient) {
   const followupRequired = getEffectiveFollowupRequired(patient);
   const reminderRequired = getEffectiveReminderRequired(patient);
+  const followupDays = patient.followup_days || getFollowupDaysFromDate(patient.followup_date);
 
   detailTitle.textContent = patient.name || "Patient";
   detailSubtitle.textContent = patient.phone || "";
@@ -518,17 +550,18 @@ function populatePatientDetails(patient) {
 
   setDetailRows(followupDetails, [
     ["Follow-up required", formatYesNo(followupRequired)],
-    ["Follow-up days", followupRequired ? patient.followup_days || 0 : 0],
+    ["Follow-up days", followupRequired ? followupDays : 0],
     ["Next date", followupRequired ? formatDateOnly(patient.followup_date) : "Not set"],
-    ["Reminder needed", formatYesNo(reminderRequired)],
-    ["Reminder date", reminderRequired ? formatDateTime(patient.reminder_date) : "Not set"],
+    ["Medication reminder needed", formatYesNo(reminderRequired)],
     ["Notes", patient.notes]
   ]);
 
-  const rawFormRows = getVisibleFormRows(patient.consultation_details || {});
+  const rawFormRows = getVisibleFormRows(patient.consultation_details || {}, {
+    excludeLabels: SUMMARY_FORM_LABELS
+  });
   const visibleFormRows = rawFormRows.length > 0
     ? rawFormRows
-    : [["Form data", "Not submitted yet"]];
+    : [["Additional form data", patient.last_form_submission_at ? "No extra fields" : "Not submitted yet"]];
   setDetailRows(formDetails, visibleFormRows);
 }
 
